@@ -1,0 +1,102 @@
+FROM ubuntu:18.04
+
+LABEL maintainer="Chris Fidao"
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# The USER_ID and GROUP_IDs come from the command line with 
+# Docker build's --build-arg arguments.
+#   docker build \
+#       --build-arg USER_ID=$(id -u ${USER}) \
+#       --build-arg GROUP_ID=$(id -g ${USER}) \
+#       -t rp/app:latest -f ./app-dockerfile .
+
+ARG USER_ID
+ARG GROUP_ID
+
+# This is deleting the www-data user and group from the container and 
+# then adding it back with the local host UID and GID (in my case 1000).
+# https://jtreminio.com/blog/running-docker-containers-as-current-host-user/
+
+RUN if [ ${USER_ID:-0} -ne 0 ] && [ ${GROUP_ID:-0} -ne 0 ]; then \
+    userdel -f www-data &&\
+    if getent group www-data ; then groupdel www-data; fi &&\
+    groupadd -g ${GROUP_ID} www-data &&\
+    useradd -l -u ${USER_ID} -g www-data www-data &&\
+    install -d -m 0755 -o www-data -g www-data /home/www-data \
+
+    # I didn't need any of these but I might. 
+    #chown --changes --silent --no-dereference --recursive \
+    #      --from=33:33 ${USER_ID}:${GROUP_ID} \
+    #    /home/www-data \
+    #    /.composer \
+    #    /var/run/php-fpm \
+    #    /var/lib/php/sessions \
+;fi
+
+# This doesn't need to be here but it is in Treminio's article so I'm
+# leaving it here for now. 
+# USER www-data
+
+RUN apt-get update \
+    && apt-get install -y gnupg tzdata \
+    && echo "UTC" > /etc/timezone \
+    && dpkg-reconfigure -f noninteractive tzdata
+
+RUN apt-get update \
+    && apt-get install -y curl zip unzip git supervisor sqlite3 vim acl \
+       nginx php7.2-fpm php7.2-cli \
+       php7.2-pgsql php7.2-sqlite3 php7.2-gd \
+       php7.2-curl php7.2-memcached \
+       php7.2-imap php7.2-mysql php7.2-mbstring \
+       php7.2-xml php7.2-zip php7.2-bcmath php7.2-soap \
+       php7.2-intl php7.2-readline php7.2-xdebug \
+       php-msgpack php-igbinary \
+    && php -r "readfile('http://getcomposer.org/installer');" | php -- --install-dir=/usr/bin/ --filename=composer \
+    && mkdir /run/php \
+    && apt-get -y autoremove \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
+    && echo "daemon off;" >> /etc/nginx/nginx.conf
+
+RUN ln -sf /dev/stdout /var/log/nginx/access.log \
+    && ln -sf /dev/stderr /var/log/nginx/error.log
+
+# Install nvm and then node 10.13.0
+# See this: https://linuxize.com/post/how-to-install-node-js-on-ubuntu-18.04/
+RUN curl -sL https://raw.githubusercontent.com/creationix/nvm/v0.33.11/install.sh -o install_nvm.sh \
+     && bash install_nvm.sh \
+     && export NVM_DIR="$HOME/.nvm" \
+     && [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" \
+     && [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion" \
+     && nvm install 10.13.0 \
+     && nvm use 10.13.0 \
+
+     && mkdir /var/root \
+     && cd /var/root  \
+     && npm install gulp-cli -g \
+     && npm install nodemon -g \
+     && npm install liveserver -g
+
+     
+     && npm install tailwindcss --save-dev \
+
+     # && cd /var/www/html \
+     # && npm install tailwindcss --save-dev   # Install Tailwind CSS
+
+
+ADD default /etc/nginx/sites-available/default
+ADD supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+ADD php-fpm.conf /etc/php/7.2/fpm/php-fpm.conf
+ADD start-container /usr/bin/start-container
+RUN chmod +x /usr/bin/start-container
+
+# My owner/permission changes.
+RUN chmod -R 775 /var/www \
+    && chown -R 33:33 /var/www \
+    && cd  /var/www \
+    && chmod -R g+s html \
+    && setfacl -R -d -m g::rwx html \
+    && setfacl -R -d -m o::rw html
+
+ENTRYPOINT ["start-container"]

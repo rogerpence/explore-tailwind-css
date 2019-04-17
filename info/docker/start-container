@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+##
+# Ensure /.composer exists and is writable
+#
+
+# Assign change writes to the www-data group.
+#chmod -R 775 /var/www
+
+
+# echo [XDebug] >> /etc/php/7.2/fpm/php.ini
+# echo zend_extension=/usr/lib/php/20170718/xdebug.so >> /etc/php/7.2/fpm/php.ini
+# echo xdebug.remote_enable=1 >> /etc/php/7.2/fpm/php.ini
+# echo xdebug.remote_autostart=1 >> /etc/php/7.2/fpm/php.ini
+# echo xdebug.remote_cookie_expire_time=3600 >> /etc/php/7.2/fpm/php.ini
+# echo xdebug.remote_connect_back=1 >> /etc/php/7.2/fpm/php.ini
+
+#OCI runtime exec failed: exec failed: container_linux.go:348: starting container process caused "exec: \"node\":
+
+##
+# Run a command or start supervisord
+#
+if [ $# -gt 0 ];then
+    # If we passed a command, run it
+    exec "$@"
+else
+    # Otherwise start supervisord
+    /usr/bin/supervisord
+fi
